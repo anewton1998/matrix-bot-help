@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use daemonize::Daemonize;
-use matrix_bot_help::Config;
+use matrix_bot_help::{Config, load_help_text};
 use matrix_sdk::{
     Client, Room, RoomState,
     config::SyncSettings,
@@ -116,8 +116,11 @@ async fn run_bot(config: &Config) -> Result<()> {
     let response = client.sync_once(SyncSettings::default()).await?;
     println!("Initial sync completed");
 
+    // Load help text at startup
+    let help_text = load_help_text(&config.help_file)
+        .context("Failed to load help text")?;
+    
     // Add event handler for room messages
-    let help_text = config.help_text.clone();
     client.add_event_handler(move |event: OriginalSyncRoomMessageEvent, room: Room| async move {
         on_room_message(event, room, &help_text).await
     });
@@ -147,11 +150,11 @@ async fn on_room_message(
         return;
     };
 
-    // Check if message contains help command
-    if text_content.body.contains("!help") || text_content.body.contains("help") {
+    // Check if message starts with help command
+    if text_content.body.starts_with("!help") {
         println!("Received help request in room {}", room.room_id());
         
-        let response = RoomMessageEventContent::text_plain(help_text);
+        let response = RoomMessageEventContent::text_markdown(help_text);
         
         if let Err(e) = room.send(response).await {
             eprintln!("Failed to send help message: {}", e);

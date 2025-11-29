@@ -1,4 +1,5 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use std::fs;
 use toml::Value;
 
 #[derive(Debug)]
@@ -8,7 +9,13 @@ pub struct Config {
     pub access_token: String,
     pub log_file: String,
     pub working_dir: String,
-    pub help_text: String,
+    pub help_file: String,
+}
+
+/// Load help text from a file.
+pub fn load_help_text(file_path: &str) -> Result<String> {
+    fs::read_to_string(file_path)
+        .with_context(|| format!("Failed to read help file '{}'", file_path))
 }
 
 impl Config {
@@ -42,10 +49,10 @@ impl Config {
                 .and_then(|v| v.as_str())
                 .unwrap_or(".")
                 .to_string(),
-            help_text: config
-                .get("help_text")
+            help_file: config
+                .get("help_file")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("No help text configured"))?
+                .ok_or_else(|| anyhow!("Missing 'help_file' in config file"))?
                 .to_string(),
         })
     }
@@ -64,7 +71,7 @@ impl Config {
         );
         println!("  Log File: {}", self.log_file);
         println!("  Working Directory: {}", self.working_dir);
-        println!("  Help Text: {}", self.help_text);
+        println!("  Help File: {}", self.help_file);
     }
 }
 
@@ -80,7 +87,7 @@ mod tests {
             homeserver = \"https://matrix.example.com\"
             username = \"@bot:example.com\"
             access_token = \"secret_token\"
-            help_text = \"Default help text\"
+            help_file = \"help.md\"
         "};
 
         // When parsing the TOML configuration
@@ -92,7 +99,7 @@ mod tests {
         assert_eq!(config.access_token, "secret_token");
         assert_eq!(config.log_file, "bot.log");
         assert_eq!(config.working_dir, ".");
-        assert_eq!(config.help_text, "Default help text");
+        assert_eq!(config.help_file, "help.md");
     }
 
     #[test]
@@ -104,10 +111,7 @@ mod tests {
             access_token = \"secret_token\"
             log_file = \"/var/log/bot.log\"
             working_directory = \"/app\"
-            help_text = \"\"\"
-            This is a multiline help text.
-            It can span multiple lines.
-            \"\"\"
+            help_file = \"/path/to/help.md\"
         "};
 
         // When parsing the TOML configuration
@@ -119,10 +123,7 @@ mod tests {
         assert_eq!(config.access_token, "secret_token");
         assert_eq!(config.log_file, "/var/log/bot.log");
         assert_eq!(config.working_dir, "/app");
-        assert_eq!(
-            config.help_text,
-            "This is a multiline help text.\nIt can span multiple lines.\n"
-        );
+        assert_eq!(config.help_file, "/path/to/help.md");
     }
 
     #[test]
@@ -131,6 +132,7 @@ mod tests {
         let toml_str = indoc! {"
             username = \"@bot:example.com\"
             access_token = \"secret_token\"
+            help_file = \"help.md\"
         "};
 
         // When parsing the TOML configuration
@@ -147,6 +149,7 @@ mod tests {
         let toml_str = indoc! {"
             homeserver = \"https://matrix.example.com\"
             access_token = \"secret_token\"
+            help_file = \"help.md\"
         "};
 
         // When parsing the TOML configuration
@@ -163,6 +166,7 @@ mod tests {
         let toml_str = indoc! {"
             homeserver = \"https://matrix.example.com\"
             username = \"@bot:example.com\"
+            help_file = \"help.md\"
         "};
 
         // When parsing the TOML configuration
@@ -171,6 +175,23 @@ mod tests {
         // Then it should return an error indicating the missing field
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Missing 'access_token'"));
+    }
+
+    #[test]
+    fn test_missing_help_file_error() {
+        // Given a TOML configuration missing the help_file field
+        let toml_str = indoc! {"
+            homeserver = \"https://matrix.example.com\"
+            username = \"@bot:example.com\"
+            access_token = \"secret_token\"
+        "};
+
+        // When parsing the TOML configuration
+        let result = Config::from_toml(toml_str);
+
+        // Then it should return an error indicating the missing field
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Missing 'help_file'"));
     }
 
     #[test]
@@ -189,5 +210,36 @@ mod tests {
         // Then it should return an error indicating TOML parsing failure
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Failed to parse TOML"));
+    }
+
+    #[test]
+    fn test_load_help_text_success() {
+        // Given a temporary file with help text content
+        let help_content = "This is test help content";
+        let temp_file = "test_help.txt";
+        std::fs::write(temp_file, help_content).unwrap();
+
+        // When loading help text from the file
+        let result = load_help_text(temp_file);
+
+        // Then it should successfully load the content
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), help_content);
+
+        // Clean up
+        std::fs::remove_file(temp_file).unwrap();
+    }
+
+    #[test]
+    fn test_load_help_text_file_not_found() {
+        // Given a non-existent file path
+        let non_existent_file = "non_existent_help.txt";
+
+        // When trying to load help text from the non-existent file
+        let result = load_help_text(non_existent_file);
+
+        // Then it should return an error
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Failed to read help file"));
     }
 }
