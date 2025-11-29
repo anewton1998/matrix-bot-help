@@ -1,93 +1,47 @@
-# Build stage
-FROM rust:1.91.1-alpine as builder
+ARG RUST_VERSION=1.91.1
+ARG APP_NAME=matrix-bot-help
 
-# Install build dependencies
-RUN apk add --no-cache musl-dev
-
-# Set working directory
+FROM rust:${RUST_VERSION}-alpine AS build
+ARG APP_NAME
 WORKDIR /app
 
-# Copy Cargo files
-COPY Cargo.toml Cargo.lock ./
+RUN apk add --no-cache clang lld musl-dev git
 
-# Create dummy source files for dependency caching
-RUN mkdir src && \
-    echo 'fn main() { println!("ERROR: This is a dummy binary - real code was not built!"); }' > src/main.rs && \
-    echo "" > src/lib.rs
+RUN --mount=type=bind,source=src,target=src \
+    --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
+    --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
+    --mount=type=cache,target=/app/target/ \
+    --mount=type=cache,target=/usr/local/cargo/git/db \
+    --mount=type=cache,target=/usr/local/cargo/registry/ \
+cargo build --locked --release && \
+cp ./target/release/$APP_NAME /bin/bot
 
-# Build dependencies (creates cached target directory)
-RUN cargo build --release && rm -rf src
 
-# Copy real source code
-COPY src ./src
-
-# Build the actual application
-RUN cargo build --release
-
-# Verify the binary was built correctly
-RUN echo "=== Target directory contents ===" && \
-    ls -la target/ && \
-    echo "=== Release directory contents ===" && \
-    ls -la target/release/ && \
-    echo "=== Finding the binary ===" && \
-    find target/release/ -name "*matrix*" -type f -executable && \
-    echo "=== Binary verification ===" && \
-    if [ -f target/release/matrix-bot-help ]; then \
-        ls -la target/release/matrix-bot-help && \
-        echo "Binary size: $(wc -c < target/release/matrix-bot-help) bytes" && \
-        echo "=== Testing binary output ===" && \
-        timeout 2s target/release/matrix-bot-help --help || echo "Binary test completed"; \
-    else \
-        echo "ERROR: matrix-bot-help binary not found!"; \
-        exit 1; \
-    fi
-
-# Runtime stage
-FROM alpine:latest
+FROM alpine:latest AS final
 
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates
 
-# Create app user
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
-
 # Set working directory
 WORKDIR /app
 
-# Copy binary from builder stage
-COPY --from=builder /app/target/release/matrix-bot-help /usr/local/bin/matrix-bot-help
-
-# Verify the binary exists and is executable
-RUN ls -la /usr/local/bin/matrix-bot-help && \
-    chmod +x /usr/local/bin/matrix-bot-help && \
-    echo "Copied binary size: $(wc -c < /usr/local/bin/matrix-bot-help) bytes"
-
-# Create directories for config and data
-RUN mkdir -p /app/config /app/data && \
-    chown -R appuser:appgroup /app
-
-# Switch to non-root user
+ARG UID=10001
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/nonexistent" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid "${UID}" \
+    appuser
 USER appuser
 
-# Copy example config files
-COPY --chown=appuser:appgroup bot.toml.example /app/config/
-COPY --chown=appuser:appgroup bot-help.md.example /app/config/
-COPY --chown=appuser:appgroup bot-help.html.example /app/config/
-COPY --chown=appuser:appgroup bot-help.txt.example /app/config/
-
-# Create default config if none exists
-RUN if [ ! -f /app/config/bot.toml ]; then \
-        cp /app/config/bot.toml.example /app/config/bot.toml; \
-    fi
+# Copy the executable from the "build" stage.
+COPY --from=build /bin/bot /bin/
 
 # Expose volume for config and data
 VOLUME ["/app/config", "/app/data"]
 
-# Set entrypoint and default command with error handling
-ENTRYPOINT ["/bin/sh", "-c", "echo 'Starting matrix-bot-help...' && /usr/local/bin/matrix-bot-help --config /app/config/bot.toml 2>&1"]
-CMD []
+# What the container should run when it is started.
+CMD ["/bin/bot", "-c", "/app/config/bot.toml"]
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD pgrep matrix-bot-help > /dev/null || exit 1
