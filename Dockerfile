@@ -12,7 +12,7 @@ COPY Cargo.toml Cargo.lock ./
 
 # Create dummy source files for dependency caching
 RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
+    echo 'fn main() { println!("ERROR: This is a dummy binary - real code was not built!"); }' > src/main.rs && \
     echo "" > src/lib.rs
 
 # Build dependencies (creates cached target directory)
@@ -34,7 +34,9 @@ RUN echo "=== Target directory contents ===" && \
     echo "=== Binary verification ===" && \
     if [ -f target/release/matrix-bot-help ]; then \
         ls -la target/release/matrix-bot-help && \
-        echo "Binary size: $(wc -c < target/release/matrix-bot-help) bytes"; \
+        echo "Binary size: $(wc -c < target/release/matrix-bot-help) bytes" && \
+        echo "=== Testing binary output ===" && \
+        timeout 2s target/release/matrix-bot-help --help || echo "Binary test completed"; \
     else \
         echo "ERROR: matrix-bot-help binary not found!"; \
         exit 1; \
