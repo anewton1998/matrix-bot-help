@@ -38,6 +38,9 @@ WORKDIR /app
 # Copy binary from builder stage
 COPY --from=builder /app/target/release/matrix-bot-help /usr/local/bin/matrix-bot-help
 
+# Verify the binary exists and is executable
+RUN ls -la /usr/local/bin/matrix-bot-help && chmod +x /usr/local/bin/matrix-bot-help
+
 # Create directories for config and data
 RUN mkdir -p /app/config /app/data && \
     chown -R appuser:appgroup /app
@@ -54,8 +57,9 @@ COPY --chown=appuser:appgroup bot-help.txt.example /app/config/
 # Expose volume for config and data
 VOLUME ["/app/config", "/app/data"]
 
-# Set default command
-CMD ["/usr/local/bin/matrix-bot-help", "--config", "/app/config/bot.toml"]
+# Set entrypoint and default command
+ENTRYPOINT ["/usr/local/bin/matrix-bot-help"]
+CMD ["--config", "/app/config/bot.toml"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
