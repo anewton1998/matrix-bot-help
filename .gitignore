@@ -18,3 +18,8 @@ Thumbs.db
 
 # Config files (if they contain sensitive data)
 bot.toml
+
+# Help files
+bot-help.md
+bot-help.txt
+bot-help.html

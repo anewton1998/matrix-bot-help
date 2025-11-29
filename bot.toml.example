@@ -1,0 +1,15 @@
+# point this to the matrix server.
+#   in some cases, "example.com" is not the matrix server, but just a server pointing to the matrix server.
+#   In that scenario, "https://synapse.example.com" might be the matrix server.
+homeserver = "https://example.com"
+username = "@help-bot:example.com"
+access_token = "XXXXXXXXXXXXXXXXXXXXXXXXXXX"
+help_file = "bot-help.md"
+
+[bot_filtering]
+ignore_self = true
+ignore_bots = true
+ignored_users = [
+    "@spam-bot:example.com",
+    "@announcement-bot:example.com"
+]
