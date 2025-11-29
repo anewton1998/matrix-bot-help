@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use daemonize::Daemonize;
-use matrix_bot_help::{Config, load_help_text};
+use matrix_bot_help::{Config, load_help_text, should_ignore_user};
 use matrix_sdk::{
     Client, Room, RoomState,
     config::SyncSettings,
@@ -120,9 +120,15 @@ async fn run_bot(config: &Config) -> Result<()> {
     let help_text = load_help_text(&config.help_file)
         .context("Failed to load help text")?;
     
+    // Get bot user ID for filtering
+    let bot_user_id = client.user_id()
+        .expect("Client should have a user ID")
+        .to_owned();
+    
     // Add event handler for room messages
+    let bot_filtering = config.bot_filtering.clone();
     client.add_event_handler(move |event: OriginalSyncRoomMessageEvent, room: Room| async move {
-        on_room_message(event, room, &help_text).await
+        on_room_message(event, room, &help_text, &bot_user_id, &bot_filtering).await
     });
 
     // Add event handler for autojoining rooms when invited
@@ -140,6 +146,8 @@ async fn on_room_message(
     event: OriginalSyncRoomMessageEvent,
     room: Room,
     help_text: &str,
+    bot_user_id: &UserId,
+    bot_filtering: &matrix_bot_help::BotFilteringConfig,
 ) {
     // Only respond to messages in joined rooms
     if room.state() != RoomState::Joined {
@@ -149,6 +157,12 @@ async fn on_room_message(
     let MessageType::Text(text_content) = event.content.msgtype else {
         return;
     };
+
+    // Check if sender should be ignored based on bot filtering configuration
+    if should_ignore_user(event.sender.as_str(), bot_user_id.as_str(), bot_filtering) {
+        println!("Ignoring message from filtered user: {}", event.sender);
+        return;
+    }
 
     // Check if message starts with help command
     if text_content.body.starts_with("!help") {
