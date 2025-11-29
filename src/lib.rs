@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use toml::Value;
 
 #[derive(Debug)]
@@ -11,25 +12,25 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_toml(toml_str: &str) -> Result<Self, String> {
+    pub fn from_toml(toml_str: &str) -> Result<Self> {
         let config: Value =
-            toml::from_str(toml_str).map_err(|e| format!("Failed to parse TOML: {}", e))?;
+            toml::from_str(toml_str).map_err(|e| anyhow!("Failed to parse TOML: {}", e))?;
 
         Ok(Config {
             homeserver: config
                 .get("homeserver")
                 .and_then(|v| v.as_str())
-                .ok_or("Missing 'homeserver' in config file")?
+                .ok_or_else(|| anyhow!("Missing 'homeserver' in config file"))?
                 .to_string(),
             username: config
                 .get("username")
                 .and_then(|v| v.as_str())
-                .ok_or("Missing 'username' in config file")?
+                .ok_or_else(|| anyhow!("Missing 'username' in config file"))?
                 .to_string(),
             access_token: config
                 .get("access_token")
                 .and_then(|v| v.as_str())
-                .ok_or("Missing 'access_token' in config file")?
+                .ok_or_else(|| anyhow!("Missing 'access_token' in config file"))?
                 .to_string(),
             log_file: config
                 .get("log_file")
@@ -44,7 +45,7 @@ impl Config {
             help_text: config
                 .get("help_text")
                 .and_then(|v| v.as_str())
-                .unwrap_or("No help text configured")
+                .ok_or_else(|| anyhow!("No help text configured"))?
                 .to_string(),
         })
     }
@@ -79,6 +80,7 @@ mod tests {
             homeserver = \"https://matrix.example.com\"
             username = \"@bot:example.com\"
             access_token = \"secret_token\"
+            help_text = \"Default help text\"
         "};
 
         // When parsing the TOML configuration
@@ -90,7 +92,7 @@ mod tests {
         assert_eq!(config.access_token, "secret_token");
         assert_eq!(config.log_file, "bot.log");
         assert_eq!(config.working_dir, ".");
-        assert_eq!(config.help_text, "No help text configured");
+        assert_eq!(config.help_text, "Default help text");
     }
 
     #[test]
@@ -136,7 +138,7 @@ mod tests {
 
         // Then it should return an error indicating the missing field
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Missing 'homeserver'"));
+        assert!(result.unwrap_err().to_string().contains("Missing 'homeserver'"));
     }
 
     #[test]
@@ -152,7 +154,7 @@ mod tests {
 
         // Then it should return an error indicating the missing field
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Missing 'username'"));
+        assert!(result.unwrap_err().to_string().contains("Missing 'username'"));
     }
 
     #[test]
@@ -168,7 +170,7 @@ mod tests {
 
         // Then it should return an error indicating the missing field
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Missing 'access_token'"));
+        assert!(result.unwrap_err().to_string().contains("Missing 'access_token'"));
     }
 
     #[test]
@@ -186,6 +188,6 @@ mod tests {
 
         // Then it should return an error indicating TOML parsing failure
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to parse TOML"));
+        assert!(result.unwrap_err().to_string().contains("Failed to parse TOML"));
     }
 }

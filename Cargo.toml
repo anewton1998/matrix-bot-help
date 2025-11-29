@@ -14,9 +14,11 @@ name = "matrix-bot-help"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1.0.100"
 clap = { version = "4.5.53", features = ["derive"] }
 daemonize = "0.5.0"
-matrix-sdk = "0.14.0"
+matrix-sdk = { version = "0.14.0", features = [ "markdown", "anyhow", "rustls-tls"], default-features = false }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 toml = "0.8"
 
 [dev-dependencies]
