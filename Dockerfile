@@ -25,8 +25,20 @@ COPY src ./src
 RUN cargo build --release
 
 # Verify the binary was built correctly
-RUN ls -la target/release/matrix-bot-help && \
-    file target/release/matrix-bot-help
+RUN echo "=== Target directory contents ===" && \
+    ls -la target/ && \
+    echo "=== Release directory contents ===" && \
+    ls -la target/release/ && \
+    echo "=== Finding the binary ===" && \
+    find target/release/ -name "*matrix*" -type f -executable && \
+    echo "=== Binary verification ===" && \
+    if [ -f target/release/matrix-bot-help ]; then \
+        ls -la target/release/matrix-bot-help && \
+        echo "Binary size: $(wc -c < target/release/matrix-bot-help) bytes"; \
+    else \
+        echo "ERROR: matrix-bot-help binary not found!"; \
+        exit 1; \
+    fi
 
 # Runtime stage
 FROM alpine:latest
@@ -45,7 +57,9 @@ WORKDIR /app
 COPY --from=builder /app/target/release/matrix-bot-help /usr/local/bin/matrix-bot-help
 
 # Verify the binary exists and is executable
-RUN ls -la /usr/local/bin/matrix-bot-help && chmod +x /usr/local/bin/matrix-bot-help
+RUN ls -la /usr/local/bin/matrix-bot-help && \
+    chmod +x /usr/local/bin/matrix-bot-help && \
+    echo "Copied binary size: $(wc -c < /usr/local/bin/matrix-bot-help) bytes"
 
 # Create directories for config and data
 RUN mkdir -p /app/config /app/data && \
