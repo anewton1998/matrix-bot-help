@@ -5,8 +5,19 @@ edition = "2024"
 authors = ["Andrew Newton"]
 license = "MIT OR Apache-2.0"
 
+[lib]
+name = "matrix_bot_help"
+path = "src/lib.rs"
+
+[[bin]]
+name = "matrix-bot-help"
+path = "src/main.rs"
+
 [dependencies]
 clap = { version = "4.5.53", features = ["derive"] }
 daemonize = "0.5.0"
 matrix-sdk = "0.14.0"
 toml = "0.8"
+
+[dev-dependencies]
+indoc = "1.0"
