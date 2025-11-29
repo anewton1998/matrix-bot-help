@@ -13,6 +13,9 @@ use matrix_sdk::{
     ruma::{UserId, device_id},
 };
 use std::fs::{self, OpenOptions};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 
 #[derive(Parser)]
 #[command(name = "matrix-bot-help")]
@@ -143,8 +146,22 @@ async fn run_bot(config: &Config) -> Result<()> {
 
     // Add event handler for detecting when users join rooms
     let join_detection_config = config.join_detection.clone();
+    let welcomed_users = Arc::new(RwLock::new(std::collections::HashSet::<(String, Instant)>::new()));
+    let welcomed_users_clone = welcomed_users.clone();
+    
     client.add_event_handler(move |event: SyncRoomMemberEvent, room: Room| async move {
-        on_room_member(event, room, &join_detection_config).await
+        on_room_member(event, room, &join_detection_config, welcomed_users_clone.clone()).await
+    });
+    
+    // Start cleanup task for welcomed users
+    let cleanup_users = welcomed_users.clone();
+    let cleanup_timeout = config.join_detection.welcome_timeout_seconds;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(300)); // Clean up every 5 minutes
+        loop {
+            interval.tick().await;
+            cleanup_welcomed_users(cleanup_users.clone(), cleanup_timeout).await;
+        }
     });
 
     // Start continuous sync
@@ -153,6 +170,15 @@ async fn run_bot(config: &Config) -> Result<()> {
     client.sync(settings).await?;
 
     Ok(())
+}
+
+async fn cleanup_welcomed_users(
+    welcomed_users: Arc<RwLock<std::collections::HashSet<(String, Instant)>>>,
+    timeout_seconds: u64,
+) {
+    let mut users = welcomed_users.write().await;
+    let now = Instant::now();
+    users.retain(|(_, timestamp)| now.duration_since(*timestamp) < Duration::from_secs(timeout_seconds));
 }
 
 async fn on_room_message(
@@ -234,6 +260,7 @@ async fn on_room_member(
     event: SyncRoomMemberEvent,
     room: Room,
     join_detection_config: &matrix_bot_help::JoinDetectionConfig,
+    welcomed_users: Arc<RwLock<std::collections::HashSet<(String, Instant)>>>,
 ) {
     // Check if join detection is enabled
     if !join_detection_config.enabled {
@@ -279,6 +306,25 @@ async fn on_room_member(
 
                 println!("User {} joined room {}", user_id, room.room_id());
 
+                // Check if we've already welcomed this user in this room recently
+                let user_room_key = format!("{}:{}", user_id, room.room_id());
+                let now = Instant::now();
+                let timeout_duration = Duration::from_secs(join_detection_config.welcome_timeout_seconds);
+                
+                // Clean up expired entries and check if this user was recently welcomed
+                {
+                    let mut users = welcomed_users.write().await;
+                    
+                    // Remove all expired entries
+                    users.retain(|(_, timestamp)| now.duration_since(*timestamp) < timeout_duration);
+                    
+                    // Check if this user-room combination exists after cleanup
+                    if users.iter().any(|(key, _)| key == &user_room_key) {
+                        println!("Already welcomed {} in room {} recently, skipping", user_id, room.room_id());
+                        return;
+                    }
+                }
+
                 // Send welcome message if enabled
                 if join_detection_config.send_welcome {
                     // Create a personalized welcome message mentioning the user
@@ -303,6 +349,10 @@ async fn on_room_member(
                             user_id,
                             room.room_id()
                         );
+                        
+                        // Add this user-room combination to the welcomed set with timestamp
+                        let mut users = welcomed_users.write().await;
+                        users.insert((user_room_key, Instant::now()));
                     }
                 }
             }

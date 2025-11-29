@@ -33,3 +33,6 @@ welcome_message = "Welcome to the room! Type !help for assistance."
 
 # Format for the welcome message (plain, html, markdown)
 welcome_format = "plain"
+
+# Timeout in seconds for deduplication of welcome messages (default: 300)
+welcome_timeout_seconds = 300

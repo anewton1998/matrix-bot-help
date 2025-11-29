@@ -62,6 +62,8 @@ pub struct JoinDetectionConfig {
     pub welcome_message: String,
     /// Format for the welcome message (plain, html, markdown)
     pub welcome_format: HelpFormat,
+    /// Timeout in seconds for deduplication of welcome messages
+    pub welcome_timeout_seconds: u64,
 }
 
 impl Default for BotFilteringConfig {
@@ -82,6 +84,7 @@ impl Default for JoinDetectionConfig {
             send_welcome: false,
             welcome_message: "Welcome to the room! Type !help for assistance.".to_string(),
             welcome_format: HelpFormat::Plain,
+            welcome_timeout_seconds: 300,
         }
     }
 }
@@ -190,6 +193,10 @@ impl Config {
                 self.join_detection.welcome_message
             );
             println!("    Welcome Format: {}", self.join_detection.welcome_format);
+            println!(
+                "    Welcome Timeout: {} seconds",
+                self.join_detection.welcome_timeout_seconds
+            );
         }
     }
 }
@@ -278,12 +285,20 @@ fn parse_join_detection_config(config: &Value) -> Result<JoinDetectionConfig> {
             .transpose()?
             .unwrap_or_default();
 
+        // Parse welcome_timeout_seconds
+        let welcome_timeout_seconds = join_config
+            .get("welcome_timeout_seconds")
+            .and_then(|v| v.as_integer())
+            .map(|v| v as u64)
+            .unwrap_or(300);
+
         Ok(JoinDetectionConfig {
             enabled,
             monitored_rooms,
             send_welcome,
             welcome_message,
             welcome_format,
+            welcome_timeout_seconds,
         })
     } else {
         // No join_detection section, use defaults
@@ -766,5 +781,27 @@ mod tests {
             all_rooms_config.join_detection.welcome_format,
             HelpFormat::Plain
         );
+    }
+
+    #[test]
+    fn test_join_detection_config_with_timeout() {
+        // Given TOML configuration with custom welcome timeout
+        let toml_str = indoc! {"
+            homeserver = \"https://matrix.example.com\"
+            username = \"@bot:example.com\"
+            access_token = \"secret_token\"
+            help_file = \"help.md\"
+
+            [join_detection]
+            enabled = true
+            send_welcome = true
+            welcome_timeout_seconds = 600
+        "};
+
+        // When parsing the configuration
+        let config = Config::from_toml(toml_str).unwrap();
+
+        // Then the timeout should be parsed correctly
+        assert_eq!(config.join_detection.welcome_timeout_seconds, 600);
     }
 }
