@@ -1,17 +1,16 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use daemonize::Daemonize;
-use matrix_bot_help::{Config, load_help_text, should_ignore_user, HelpFormat};
+use matrix_bot_help::{Config, HelpFormat, load_help_text, should_ignore_user};
 use matrix_sdk::{
-    Client, Room, RoomState,
-    config::SyncSettings,
+    Client, Room, RoomState, SessionMeta, SessionTokens,
     authentication::matrix::MatrixSession,
-    ruma::{device_id, UserId},
-    SessionMeta, SessionTokens,
+    config::SyncSettings,
+    ruma::events::room::member::{MembershipState, StrippedRoomMemberEvent},
     ruma::events::room::message::{
         MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent,
     },
-    ruma::events::room::member::{StrippedRoomMemberEvent, MembershipState},
+    ruma::{UserId, device_id},
 };
 use std::fs::{self, OpenOptions};
 
@@ -39,8 +38,7 @@ async fn main() -> Result<()> {
         .with_context(|| format!("Failed to read config file '{}'", cli.config))?;
 
     // Parse configuration from TOML
-    let config = Config::from_toml(&config_content)
-        .context("Failed to parse config")?;
+    let config = Config::from_toml(&config_content).context("Failed to parse config")?;
 
     println!("Config loaded:");
     config.print();
@@ -63,13 +61,11 @@ async fn main() -> Result<()> {
             )
             .stderr(log_file_handle);
 
-        daemonize
-            .start()
-            .context("Failed to daemonize")?;
+        daemonize.start().context("Failed to daemonize")?;
 
         println!("Successfully daemonized, PID: {}", std::process::id());
         config.print();
-        
+
         // Bot logic runs here after daemonizing
         run_bot(&config).await?;
     } else {
@@ -92,7 +88,7 @@ async fn run_bot(config: &Config) -> Result<()> {
     // Create a MatrixSession with existing access token
     let user_id = UserId::parse(&config.username)
         .map_err(|e| anyhow::anyhow!("Invalid user ID '{}': {}", config.username, e))?;
-    
+
     let session = MatrixSession {
         meta: SessionMeta {
             user_id,
@@ -117,20 +113,30 @@ async fn run_bot(config: &Config) -> Result<()> {
     println!("Initial sync completed");
 
     // Load help text at startup
-    let help_text = load_help_text(&config.help_file)
-        .context("Failed to load help text")?;
-    
+    let help_text = load_help_text(&config.help_file).context("Failed to load help text")?;
+
     // Get bot user ID for filtering
-    let bot_user_id = client.user_id()
+    let bot_user_id = client
+        .user_id()
         .expect("Client should have a user ID")
         .to_owned();
-    
+
     // Add event handler for room messages
     let bot_filtering = config.bot_filtering.clone();
     let help_format = config.help_format.clone();
-    client.add_event_handler(move |event: OriginalSyncRoomMessageEvent, room: Room| async move {
-        on_room_message(event, room, &help_text, &bot_user_id, &bot_filtering, &help_format).await
-    });
+    client.add_event_handler(
+        move |event: OriginalSyncRoomMessageEvent, room: Room| async move {
+            on_room_message(
+                event,
+                room,
+                &help_text,
+                &bot_user_id,
+                &bot_filtering,
+                &help_format,
+            )
+            .await
+        },
+    );
 
     // Add event handler for autojoining rooms when invited
     client.add_event_handler(on_stripped_state_member);
@@ -169,24 +175,20 @@ async fn on_room_message(
     // Check if message starts with help command
     if text_content.body.starts_with("!help") {
         println!("Received help request in room {}", room.room_id());
-        
+
         let response = match help_format {
             HelpFormat::Plain => RoomMessageEventContent::text_plain(help_text),
             HelpFormat::Html => RoomMessageEventContent::text_html(help_text, help_text),
             HelpFormat::Markdown => RoomMessageEventContent::text_markdown(help_text),
         };
-        
+
         if let Err(e) = room.send(response).await {
             eprintln!("Failed to send help message: {}", e);
         }
     }
 }
 
-async fn on_stripped_state_member(
-    event: StrippedRoomMemberEvent,
-    client: Client,
-    room: Room,
-) {
+async fn on_stripped_state_member(event: StrippedRoomMemberEvent, client: Client, room: Room) {
     // Only process invitations for the bot itself
     if event.state_key != client.user_id().expect("Client should have a user ID") {
         return;
@@ -195,28 +197,29 @@ async fn on_stripped_state_member(
     // Check if this is an invitation
     if event.content.membership == MembershipState::Invite {
         println!("Received invitation to room {}", room.room_id());
-        
+
         // Join the room with retry logic
         let room_id = room.room_id().to_owned();
         tokio::spawn(async move {
             let mut delay = 2;
-            
+
             while let Err(e) = room.join().await {
-                eprintln!("Failed to join room {} ({}), retrying in {}s", room_id, e, delay);
+                eprintln!(
+                    "Failed to join room {} ({}), retrying in {}s",
+                    room_id, e, delay
+                );
                 tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
                 delay *= 2;
-                
+
                 if delay > 3600 {
                     eprintln!("Can't join room {} after multiple retries", room_id);
                     break;
                 }
             }
-            
-            if let Ok(_) = room.join().await {
+
+            if (room.join().await).is_ok() {
                 println!("Successfully joined room {}", room_id);
             }
         });
     }
 }
-
-

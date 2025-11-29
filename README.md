@@ -84,7 +84,7 @@ access_token = "your_access_token_here"
 help_file = "/app/config/bot-help.md"
 
 # Optional fields
-log_file = "/app/data/bot.log"
+log_file = "/app/data/bot.log" # only used when deamonized
 working_directory = "/app/data"
 help_format = "markdown"  # Options: plain, html, markdown
 

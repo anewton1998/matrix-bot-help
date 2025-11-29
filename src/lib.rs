@@ -1,11 +1,12 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::str::FromStr;
 use toml::Value;
 
 /// Help format options for displaying help text.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum HelpFormat {
+    #[default]
     Plain,
     Html,
     Markdown,
@@ -19,14 +20,11 @@ impl FromStr for HelpFormat {
             "plain" => Ok(HelpFormat::Plain),
             "html" => Ok(HelpFormat::Html),
             "markdown" | "md" => Ok(HelpFormat::Markdown),
-            _ => Err(anyhow!("Invalid help format '{}'. Valid options are: plain, html, markdown", s)),
+            _ => Err(anyhow!(
+                "Invalid help format '{}'. Valid options are: plain, html, markdown",
+                s
+            )),
         }
-    }
-}
-
-impl Default for HelpFormat {
-    fn default() -> Self {
-        HelpFormat::Plain
     }
 }
 
@@ -112,7 +110,7 @@ impl Config {
             help_format: config
                 .get("help_format")
                 .and_then(|v| v.as_str())
-                .map(|s| HelpFormat::from_str(s))
+                .map(HelpFormat::from_str)
                 .transpose()?
                 .unwrap_or_default(),
             bot_filtering: parse_bot_filtering_config(&config)?,
@@ -152,7 +150,7 @@ impl Config {
 /// Parse bot filtering configuration from TOML value.
 fn parse_bot_filtering_config(config: &Value) -> Result<BotFilteringConfig> {
     let bot_filtering_config = config.get("bot_filtering");
-    
+
     if let Some(bot_config) = bot_filtering_config {
         // Parse ignore_self
         let ignore_self = bot_config
@@ -208,10 +206,8 @@ pub fn should_ignore_user(user_id: &str, bot_user_id: &str, config: &BotFilterin
     }
 
     // Check if user has "bot" in their username (case-insensitive)
-    if config.ignore_bots {
-        if user_id.to_lowercase().contains("bot") {
-            return true;
-        }
+    if config.ignore_bots && user_id.to_lowercase().contains("bot") {
+        return true;
     }
 
     false
@@ -244,8 +240,8 @@ mod tests {
         assert_eq!(config.help_file, "help.md");
         assert_eq!(config.help_format, HelpFormat::Plain);
         // Bot filtering should use defaults when not specified
-        assert_eq!(config.bot_filtering.ignore_self, true);
-        assert_eq!(config.bot_filtering.ignore_bots, false);
+        assert!(config.bot_filtering.ignore_self);
+        assert!(!config.bot_filtering.ignore_bots);
         assert!(config.bot_filtering.ignored_users.is_empty());
     }
 
@@ -278,11 +274,21 @@ mod tests {
         assert_eq!(config.working_dir, "/app");
         assert_eq!(config.help_file, "/path/to/help.md");
         assert_eq!(config.help_format, HelpFormat::Markdown);
-        assert_eq!(config.bot_filtering.ignore_self, false);
-        assert_eq!(config.bot_filtering.ignore_bots, true);
+        assert!(!config.bot_filtering.ignore_self);
+        assert!(config.bot_filtering.ignore_bots);
         assert_eq!(config.bot_filtering.ignored_users.len(), 2);
-        assert!(config.bot_filtering.ignored_users.contains(&"@spam-bot:example.com".to_string()));
-        assert!(config.bot_filtering.ignored_users.contains(&"@announcement-bot:example.com".to_string()));
+        assert!(
+            config
+                .bot_filtering
+                .ignored_users
+                .contains(&"@spam-bot:example.com".to_string())
+        );
+        assert!(
+            config
+                .bot_filtering
+                .ignored_users
+                .contains(&"@announcement-bot:example.com".to_string())
+        );
     }
 
     #[test]
@@ -299,7 +305,12 @@ mod tests {
 
         // Then it should return an error indicating the missing field
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing 'homeserver'"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Missing 'homeserver'")
+        );
     }
 
     #[test]
@@ -316,7 +327,12 @@ mod tests {
 
         // Then it should return an error indicating the missing field
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing 'username'"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Missing 'username'")
+        );
     }
 
     #[test]
@@ -333,7 +349,12 @@ mod tests {
 
         // Then it should return an error indicating the missing field
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing 'access_token'"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Missing 'access_token'")
+        );
     }
 
     #[test]
@@ -350,7 +371,12 @@ mod tests {
 
         // Then it should return an error indicating the missing field
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing 'help_file'"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Missing 'help_file'")
+        );
     }
 
     #[test]
@@ -368,7 +394,12 @@ mod tests {
 
         // Then it should return an error indicating TOML parsing failure
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to parse TOML"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to parse TOML")
+        );
     }
 
     #[test]
@@ -429,7 +460,12 @@ mod tests {
 
         // And invalid format should return error
         assert!(invalid_result.is_err());
-        assert!(invalid_result.unwrap_err().to_string().contains("Invalid help format"));
+        assert!(
+            invalid_result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid help format")
+        );
     }
 
     #[test]
@@ -460,7 +496,12 @@ mod tests {
 
         // Then it should return an error
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Failed to read help file"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to read help file")
+        );
     }
 
     #[test]
@@ -517,7 +558,11 @@ mod tests {
         // When checking different users
         assert!(!should_ignore_user(bot_user_id, bot_user_id, &config));
         assert!(should_ignore_user(spam_bot_id, bot_user_id, &config));
-        assert!(should_ignore_user(announcement_bot_id, bot_user_id, &config));
+        assert!(should_ignore_user(
+            announcement_bot_id,
+            bot_user_id,
+            &config
+        ));
         assert!(!should_ignore_user(regular_user_id, bot_user_id, &config));
     }
 
