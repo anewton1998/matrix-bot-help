@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use daemonize::Daemonize;
-use matrix_bot_help::{Config, load_help_text, should_ignore_user};
+use matrix_bot_help::{Config, load_help_text, should_ignore_user, HelpFormat};
 use matrix_sdk::{
     Client, Room, RoomState,
     config::SyncSettings,
@@ -127,8 +127,9 @@ async fn run_bot(config: &Config) -> Result<()> {
     
     // Add event handler for room messages
     let bot_filtering = config.bot_filtering.clone();
+    let help_format = config.help_format.clone();
     client.add_event_handler(move |event: OriginalSyncRoomMessageEvent, room: Room| async move {
-        on_room_message(event, room, &help_text, &bot_user_id, &bot_filtering).await
+        on_room_message(event, room, &help_text, &bot_user_id, &bot_filtering, &help_format).await
     });
 
     // Add event handler for autojoining rooms when invited
@@ -148,6 +149,7 @@ async fn on_room_message(
     help_text: &str,
     bot_user_id: &UserId,
     bot_filtering: &matrix_bot_help::BotFilteringConfig,
+    help_format: &HelpFormat,
 ) {
     // Only respond to messages in joined rooms
     if room.state() != RoomState::Joined {
@@ -168,7 +170,11 @@ async fn on_room_message(
     if text_content.body.starts_with("!help") {
         println!("Received help request in room {}", room.room_id());
         
-        let response = RoomMessageEventContent::text_markdown(help_text);
+        let response = match help_format {
+            HelpFormat::Plain => RoomMessageEventContent::text_plain(help_text),
+            HelpFormat::Html => RoomMessageEventContent::text_html(help_text, help_text),
+            HelpFormat::Markdown => RoomMessageEventContent::text_markdown(help_text),
+        };
         
         if let Err(e) = room.send(response).await {
             eprintln!("Failed to send help message: {}", e);

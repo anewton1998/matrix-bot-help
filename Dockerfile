@@ -1,0 +1,62 @@
+# Build stage
+FROM rust:1.83-alpine as builder
+
+# Install build dependencies
+RUN apk add --no-cache musl-dev
+
+# Set working directory
+WORKDIR /app
+
+# Copy Cargo files
+COPY Cargo.toml Cargo.lock ./
+
+# Create dummy main.rs to cache dependencies
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+
+# Build dependencies
+RUN cargo build --release && rm -rf src
+
+# Copy source code
+COPY src ./src
+
+# Build the application
+RUN touch src/main.rs && cargo build --release
+
+# Runtime stage
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates
+
+# Create app user
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from builder stage
+COPY --from=builder /app/target/release/matrix-bot-help /usr/local/bin/matrix-bot-help
+
+# Create directories for config and data
+RUN mkdir -p /app/config /app/data && \
+    chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
+
+# Copy example config files
+COPY --chown=appuser:appgroup bot.toml.example /app/config/
+COPY --chown=appuser:appgroup bot-help.md.example /app/config/
+COPY --chown=appuser:appgroup bot-help.html.example /app/config/
+COPY --chown=appuser:appgroup bot-help.txt.example /app/config/
+
+# Expose volume for config and data
+VOLUME ["/app/config", "/app/data"]
+
+# Set default command
+CMD ["/usr/local/bin/matrix-bot-help", "--config", "/app/config/bot.toml"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD pgrep matrix-bot-help > /dev/null || exit 1

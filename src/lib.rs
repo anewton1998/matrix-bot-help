@@ -1,6 +1,44 @@
 use anyhow::{anyhow, Context, Result};
 use std::fs;
+use std::str::FromStr;
 use toml::Value;
+
+/// Help format options for displaying help text.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HelpFormat {
+    Plain,
+    Html,
+    Markdown,
+}
+
+impl FromStr for HelpFormat {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "plain" => Ok(HelpFormat::Plain),
+            "html" => Ok(HelpFormat::Html),
+            "markdown" | "md" => Ok(HelpFormat::Markdown),
+            _ => Err(anyhow!("Invalid help format '{}'. Valid options are: plain, html, markdown", s)),
+        }
+    }
+}
+
+impl Default for HelpFormat {
+    fn default() -> Self {
+        HelpFormat::Plain
+    }
+}
+
+impl std::fmt::Display for HelpFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HelpFormat::Plain => write!(f, "plain"),
+            HelpFormat::Html => write!(f, "html"),
+            HelpFormat::Markdown => write!(f, "markdown"),
+        }
+    }
+}
 
 /// Configuration for bot message filtering.
 #[derive(Debug, Clone)]
@@ -31,6 +69,7 @@ pub struct Config {
     pub log_file: String,
     pub working_dir: String,
     pub help_file: String,
+    pub help_format: HelpFormat,
     pub bot_filtering: BotFilteringConfig,
 }
 
@@ -70,6 +109,12 @@ impl Config {
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow!("Missing 'help_file' in config file"))?
                 .to_string(),
+            help_format: config
+                .get("help_format")
+                .and_then(|v| v.as_str())
+                .map(|s| HelpFormat::from_str(s))
+                .transpose()?
+                .unwrap_or_default(),
             bot_filtering: parse_bot_filtering_config(&config)?,
         })
     }
@@ -89,6 +134,7 @@ impl Config {
         println!("  Log File: {}", self.log_file);
         println!("  Working Directory: {}", self.working_dir);
         println!("  Help File: {}", self.help_file);
+        println!("  Help Format: {}", self.help_format);
         println!("  Bot Filtering:");
         println!("    Ignore Self: {}", self.bot_filtering.ignore_self);
         println!("    Ignore Bots: {}", self.bot_filtering.ignore_bots);
@@ -196,6 +242,7 @@ mod tests {
         assert_eq!(config.log_file, "bot.log");
         assert_eq!(config.working_dir, ".");
         assert_eq!(config.help_file, "help.md");
+        assert_eq!(config.help_format, HelpFormat::Plain);
         // Bot filtering should use defaults when not specified
         assert_eq!(config.bot_filtering.ignore_self, true);
         assert_eq!(config.bot_filtering.ignore_bots, false);
@@ -212,6 +259,7 @@ mod tests {
             log_file = \"/var/log/bot.log\"
             working_directory = \"/app\"
             help_file = \"/path/to/help.md\"
+            help_format = \"markdown\"
 
             [bot_filtering]
             ignore_self = false
@@ -229,6 +277,7 @@ mod tests {
         assert_eq!(config.log_file, "/var/log/bot.log");
         assert_eq!(config.working_dir, "/app");
         assert_eq!(config.help_file, "/path/to/help.md");
+        assert_eq!(config.help_format, HelpFormat::Markdown);
         assert_eq!(config.bot_filtering.ignore_self, false);
         assert_eq!(config.bot_filtering.ignore_bots, true);
         assert_eq!(config.bot_filtering.ignored_users.len(), 2);
@@ -320,6 +369,67 @@ mod tests {
         // Then it should return an error indicating TOML parsing failure
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Failed to parse TOML"));
+    }
+
+    #[test]
+    fn test_help_format_parsing() {
+        // Given TOML configurations with different help formats
+        let plain_toml = indoc! {"
+            homeserver = \"https://matrix.example.com\"
+            username = \"@bot:example.com\"
+            access_token = \"secret_token\"
+            help_file = \"help.md\"
+            help_format = \"plain\"
+        "};
+
+        let html_toml = indoc! {"
+            homeserver = \"https://matrix.example.com\"
+            username = \"@bot:example.com\"
+            access_token = \"secret_token\"
+            help_file = \"help.md\"
+            help_format = \"html\"
+        "};
+
+        let markdown_toml = indoc! {"
+            homeserver = \"https://matrix.example.com\"
+            username = \"@bot:example.com\"
+            access_token = \"secret_token\"
+            help_file = \"help.md\"
+            help_format = \"markdown\"
+        "};
+
+        let md_short_toml = indoc! {"
+            homeserver = \"https://matrix.example.com\"
+            username = \"@bot:example.com\"
+            access_token = \"secret_token\"
+            help_file = \"help.md\"
+            help_format = \"md\"
+        "};
+
+        let invalid_toml = indoc! {"
+            homeserver = \"https://matrix.example.com\"
+            username = \"@bot:example.com\"
+            access_token = \"secret_token\"
+            help_file = \"help.md\"
+            help_format = \"invalid\"
+        "};
+
+        // When parsing the configurations
+        let plain_config = Config::from_toml(plain_toml).unwrap();
+        let html_config = Config::from_toml(html_toml).unwrap();
+        let markdown_config = Config::from_toml(markdown_toml).unwrap();
+        let md_short_config = Config::from_toml(md_short_toml).unwrap();
+        let invalid_result = Config::from_toml(invalid_toml);
+
+        // Then valid formats should parse correctly
+        assert_eq!(plain_config.help_format, HelpFormat::Plain);
+        assert_eq!(html_config.help_format, HelpFormat::Html);
+        assert_eq!(markdown_config.help_format, HelpFormat::Markdown);
+        assert_eq!(md_short_config.help_format, HelpFormat::Markdown);
+
+        // And invalid format should return error
+        assert!(invalid_result.is_err());
+        assert!(invalid_result.unwrap_err().to_string().contains("Invalid help format"));
     }
 
     #[test]
