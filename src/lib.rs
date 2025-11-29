@@ -185,7 +185,10 @@ impl Config {
         }
         println!("    Send Welcome: {}", self.join_detection.send_welcome);
         if self.join_detection.send_welcome {
-            println!("    Welcome Message: {}", self.join_detection.welcome_message);
+            println!(
+                "    Welcome Message: {}",
+                self.join_detection.welcome_message
+            );
             println!("    Welcome Format: {}", self.join_detection.welcome_format);
         }
     }
@@ -726,11 +729,27 @@ mod tests {
         // Then configurations should be parsed correctly
         assert!(enabled_config.join_detection.enabled);
         assert_eq!(enabled_config.join_detection.monitored_rooms.len(), 2);
-        assert!(enabled_config.join_detection.monitored_rooms.contains(&"!room1:example.com".to_string()));
-        assert!(enabled_config.join_detection.monitored_rooms.contains(&"!room2:example.com".to_string()));
+        assert!(
+            enabled_config
+                .join_detection
+                .monitored_rooms
+                .contains(&"!room1:example.com".to_string())
+        );
+        assert!(
+            enabled_config
+                .join_detection
+                .monitored_rooms
+                .contains(&"!room2:example.com".to_string())
+        );
         assert!(enabled_config.join_detection.send_welcome);
-        assert_eq!(enabled_config.join_detection.welcome_message, "Welcome! Type !help for assistance.");
-        assert_eq!(enabled_config.join_detection.welcome_format, HelpFormat::Markdown);
+        assert_eq!(
+            enabled_config.join_detection.welcome_message,
+            "Welcome! Type !help for assistance."
+        );
+        assert_eq!(
+            enabled_config.join_detection.welcome_format,
+            HelpFormat::Markdown
+        );
 
         assert!(!disabled_config.join_detection.enabled);
         assert!(disabled_config.join_detection.monitored_rooms.is_empty());
@@ -739,7 +758,13 @@ mod tests {
         assert!(all_rooms_config.join_detection.enabled);
         assert!(all_rooms_config.join_detection.monitored_rooms.is_empty());
         assert!(!all_rooms_config.join_detection.send_welcome);
-        assert_eq!(all_rooms_config.join_detection.welcome_message, "Welcome to the room! Type !help for assistance.");
-        assert_eq!(all_rooms_config.join_detection.welcome_format, HelpFormat::Plain);
+        assert_eq!(
+            all_rooms_config.join_detection.welcome_message,
+            "Welcome to the room! Type !help for assistance."
+        );
+        assert_eq!(
+            all_rooms_config.join_detection.welcome_format,
+            HelpFormat::Plain
+        );
     }
 }
