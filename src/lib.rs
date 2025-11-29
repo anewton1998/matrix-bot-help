@@ -49,12 +49,39 @@ pub struct BotFilteringConfig {
     pub ignored_users: Vec<String>,
 }
 
+/// Configuration for join detection.
+#[derive(Debug, Clone)]
+pub struct JoinDetectionConfig {
+    /// Whether to detect user joins at all
+    pub enabled: bool,
+    /// Specific list of room IDs to monitor for joins (empty = all rooms)
+    pub monitored_rooms: Vec<String>,
+    /// Whether to send a welcome message to users who join
+    pub send_welcome: bool,
+    /// Welcome message to send to new users
+    pub welcome_message: String,
+    /// Format for the welcome message (plain, html, markdown)
+    pub welcome_format: HelpFormat,
+}
+
 impl Default for BotFilteringConfig {
     fn default() -> Self {
         Self {
             ignore_self: true,
             ignore_bots: false,
             ignored_users: Vec::new(),
+        }
+    }
+}
+
+impl Default for JoinDetectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            monitored_rooms: Vec::new(),
+            send_welcome: false,
+            welcome_message: "Welcome to the room! Type !help for assistance.".to_string(),
+            welcome_format: HelpFormat::Plain,
         }
     }
 }
@@ -69,6 +96,7 @@ pub struct Config {
     pub help_file: String,
     pub help_format: HelpFormat,
     pub bot_filtering: BotFilteringConfig,
+    pub join_detection: JoinDetectionConfig,
 }
 
 impl Config {
@@ -114,6 +142,7 @@ impl Config {
                 .transpose()?
                 .unwrap_or_default(),
             bot_filtering: parse_bot_filtering_config(&config)?,
+            join_detection: parse_join_detection_config(&config)?,
         })
     }
 
@@ -143,6 +172,21 @@ impl Config {
             }
         } else {
             println!("    Ignored Users: [none]");
+        }
+        println!("  Join Detection:");
+        println!("    Enabled: {}", self.join_detection.enabled);
+        if !self.join_detection.monitored_rooms.is_empty() {
+            println!("    Monitored Rooms:");
+            for room in &self.join_detection.monitored_rooms {
+                println!("      {}", room);
+            }
+        } else {
+            println!("    Monitored Rooms: [all rooms]");
+        }
+        println!("    Send Welcome: {}", self.join_detection.send_welcome);
+        if self.join_detection.send_welcome {
+            println!("    Welcome Message: {}", self.join_detection.welcome_message);
+            println!("    Welcome Format: {}", self.join_detection.welcome_format);
         }
     }
 }
@@ -184,6 +228,63 @@ fn parse_bot_filtering_config(config: &Value) -> Result<BotFilteringConfig> {
     } else {
         // No bot_filtering section, use defaults
         Ok(BotFilteringConfig::default())
+    }
+}
+
+/// Parse join detection configuration from TOML value.
+fn parse_join_detection_config(config: &Value) -> Result<JoinDetectionConfig> {
+    let join_detection_config = config.get("join_detection");
+
+    if let Some(join_config) = join_detection_config {
+        // Parse enabled
+        let enabled = join_config
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        // Parse monitored_rooms
+        let monitored_rooms = join_config
+            .get("monitored_rooms")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Parse send_welcome
+        let send_welcome = join_config
+            .get("send_welcome")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        // Parse welcome_message
+        let welcome_message = join_config
+            .get("welcome_message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Welcome to the room! Type !help for assistance.")
+            .to_string();
+
+        // Parse welcome_format
+        let welcome_format = join_config
+            .get("welcome_format")
+            .and_then(|v| v.as_str())
+            .map(HelpFormat::from_str)
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(JoinDetectionConfig {
+            enabled,
+            monitored_rooms,
+            send_welcome,
+            welcome_message,
+            welcome_format,
+        })
+    } else {
+        // No join_detection section, use defaults
+        Ok(JoinDetectionConfig::default())
     }
 }
 
@@ -581,5 +682,64 @@ mod tests {
         // When checking case-insensitive bot detection
         assert!(should_ignore_user(uppercase_bot_id, bot_user_id, &config));
         assert!(should_ignore_user(mixed_case_bot_id, bot_user_id, &config));
+    }
+
+    #[test]
+    fn test_join_detection_config_parsing() {
+        // Given TOML configurations with different join detection settings
+        let enabled_toml = indoc! {"
+            homeserver = \"https://matrix.example.com\"
+            username = \"@bot:example.com\"
+            access_token = \"secret_token\"
+            help_file = \"help.md\"
+
+            [join_detection]
+            enabled = true
+            monitored_rooms = [\"!room1:example.com\", \"!room2:example.com\"]
+            send_welcome = true
+            welcome_message = \"Welcome! Type !help for assistance.\"
+            welcome_format = \"markdown\"
+        "};
+
+        let disabled_toml = indoc! {"
+            homeserver = \"https://matrix.example.com\"
+            username = \"@bot:example.com\"
+            access_token = \"secret_token\"
+            help_file = \"help.md\"
+
+            [join_detection]
+            enabled = false
+        "};
+
+        let all_rooms_toml = indoc! {"
+            homeserver = \"https://matrix.example.com\"
+            username = \"@bot:example.com\"
+            access_token = \"secret_token\"
+            help_file = \"help.md\"
+        "};
+
+        // When parsing the configurations
+        let enabled_config = Config::from_toml(enabled_toml).unwrap();
+        let disabled_config = Config::from_toml(disabled_toml).unwrap();
+        let all_rooms_config = Config::from_toml(all_rooms_toml).unwrap();
+
+        // Then configurations should be parsed correctly
+        assert!(enabled_config.join_detection.enabled);
+        assert_eq!(enabled_config.join_detection.monitored_rooms.len(), 2);
+        assert!(enabled_config.join_detection.monitored_rooms.contains(&"!room1:example.com".to_string()));
+        assert!(enabled_config.join_detection.monitored_rooms.contains(&"!room2:example.com".to_string()));
+        assert!(enabled_config.join_detection.send_welcome);
+        assert_eq!(enabled_config.join_detection.welcome_message, "Welcome! Type !help for assistance.");
+        assert_eq!(enabled_config.join_detection.welcome_format, HelpFormat::Markdown);
+
+        assert!(!disabled_config.join_detection.enabled);
+        assert!(disabled_config.join_detection.monitored_rooms.is_empty());
+        assert!(!disabled_config.join_detection.send_welcome);
+
+        assert!(all_rooms_config.join_detection.enabled);
+        assert!(all_rooms_config.join_detection.monitored_rooms.is_empty());
+        assert!(!all_rooms_config.join_detection.send_welcome);
+        assert_eq!(all_rooms_config.join_detection.welcome_message, "Welcome to the room! Type !help for assistance.");
+        assert_eq!(all_rooms_config.join_detection.welcome_format, HelpFormat::Plain);
     }
 }

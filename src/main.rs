@@ -6,7 +6,7 @@ use matrix_sdk::{
     Client, Room, RoomState, SessionMeta, SessionTokens,
     authentication::matrix::MatrixSession,
     config::SyncSettings,
-    ruma::events::room::member::{MembershipState, StrippedRoomMemberEvent},
+    ruma::events::room::member::{MembershipState, StrippedRoomMemberEvent, SyncRoomMemberEvent},
     ruma::events::room::message::{
         MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent,
     },
@@ -141,6 +141,12 @@ async fn run_bot(config: &Config) -> Result<()> {
     // Add event handler for autojoining rooms when invited
     client.add_event_handler(on_stripped_state_member);
 
+    // Add event handler for detecting when users join rooms
+    let join_detection_config = config.join_detection.clone();
+    client.add_event_handler(move |event: SyncRoomMemberEvent, room: Room| async move {
+        on_room_member(event, room, &join_detection_config).await
+    });
+
     // Start continuous sync
     let settings = SyncSettings::default().token(response.next_batch);
     println!("Starting continuous sync...");
@@ -221,5 +227,88 @@ async fn on_stripped_state_member(event: StrippedRoomMemberEvent, client: Client
                 println!("Successfully joined room {}", room_id);
             }
         });
+    }
+}
+
+async fn on_room_member(
+    event: SyncRoomMemberEvent,
+    room: Room,
+    join_detection_config: &matrix_bot_help::JoinDetectionConfig,
+) {
+    // Check if join detection is enabled
+    if !join_detection_config.enabled {
+        return;
+    }
+
+    // Only respond to events in joined rooms
+    if room.state() != RoomState::Joined {
+        return;
+    }
+
+    // Check if this room is in the monitored list (if list is not empty)
+    if !join_detection_config.monitored_rooms.is_empty() {
+        let room_id_str = room.room_id().to_string();
+        if !join_detection_config.monitored_rooms.contains(&room_id_str) {
+            return;
+        }
+    }
+
+    // Get the bot's user ID for filtering
+    let client = room.client();
+    let bot_user_id = client.user_id().expect("Client should have a user ID");
+
+    // Extract the user ID from the event
+    let user_id = event.state_key().to_owned();
+
+    // Don't announce when the bot itself joins
+    if user_id == bot_user_id {
+        return;
+    }
+
+    // Check if the user is joining the room
+    match event {
+        SyncRoomMemberEvent::Original(original) => {
+            if original.content.membership == MembershipState::Join {
+                // Check if this is actually a new join (not just a state update)
+                if let Some(prev_content) = original.prev_content()
+                    && prev_content.membership == MembershipState::Join
+                {
+                    // This is not a new join, just an update to an existing member
+                    return;
+                }
+
+                println!("User {} joined room {}", user_id, room.room_id());
+
+                // Send welcome message if enabled
+                if join_detection_config.send_welcome {
+                    // Create a personalized welcome message mentioning the user
+                    let welcome_text =
+                        format!("{}: {}", user_id, join_detection_config.welcome_message);
+                    let response = match join_detection_config.welcome_format {
+                        HelpFormat::Plain => RoomMessageEventContent::text_plain(&welcome_text),
+                        HelpFormat::Html => {
+                            RoomMessageEventContent::text_html(&welcome_text, &welcome_text)
+                        }
+                        HelpFormat::Markdown => {
+                            RoomMessageEventContent::text_markdown(&welcome_text)
+                        }
+                    };
+
+                    // Send welcome message in the room where the user joined
+                    if let Err(e) = room.send(response).await {
+                        eprintln!("Failed to send welcome message to {}: {}", user_id, e);
+                    } else {
+                        println!(
+                            "Sent welcome message to {} in room {}",
+                            user_id,
+                            room.room_id()
+                        );
+                    }
+                }
+            }
+        }
+        SyncRoomMemberEvent::Redacted(_) => {
+            // Handle redacted events if needed
+        }
     }
 }
