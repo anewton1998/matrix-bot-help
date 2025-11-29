@@ -7,6 +7,7 @@ A Matrix bot that provides help messages to users in Matrix rooms. The bot respo
 - **Multiple Help Formats**: Supports Plain text, HTML, and Markdown help messages
 - **Bot Filtering**: Configurable filtering of bot messages and specific users
 - **Auto-join**: Automatically joins rooms when invited
+- **Welcome Messages**: Sends welcome messages when users join specific rooms
 - **Daemon Mode**: Can run as a background daemon
 - **Docker Support**: Containerized deployment with multi-stage builds
 - **Configuration**: TOML-based configuration with sensible defaults
@@ -84,6 +85,12 @@ help_format = "markdown"  # Options: plain, html, markdown
 ignore_self = true
 ignore_bots = false
 ignored_users = ["@spam-bot:example.com"]
+
+# Welcome messages (optional)
+[welcome]
+enabled = true
+welcome_file = "/app/config/bot-welcome.md"
+target_rooms = ["!roomid:example.com", "!anotherroom:example.com"]
 ```
 
 ## Development
