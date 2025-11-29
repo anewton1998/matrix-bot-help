@@ -10,17 +10,23 @@ WORKDIR /app
 # Copy Cargo files
 COPY Cargo.toml Cargo.lock ./
 
-# Create dummy source files to cache dependencies
-RUN mkdir src && echo "fn main() {}" > src/main.rs && echo "" > src/lib.rs
+# Create dummy source files for dependency caching
+RUN mkdir src && \
+    echo "fn main() {}" > src/main.rs && \
+    echo "" > src/lib.rs
 
-# Build dependencies
+# Build dependencies (creates cached target directory)
 RUN cargo build --release && rm -rf src
 
-# Copy source code
+# Copy real source code
 COPY src ./src
 
-# Build the application
+# Build the actual application
 RUN cargo build --release
+
+# Verify the binary was built correctly
+RUN ls -la target/release/matrix-bot-help && \
+    file target/release/matrix-bot-help
 
 # Runtime stage
 FROM alpine:latest
