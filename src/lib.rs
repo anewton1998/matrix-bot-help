@@ -60,6 +60,8 @@ pub struct JoinDetectionConfig {
     pub send_welcome: bool,
     /// Welcome message to send to new users
     pub welcome_message: String,
+    /// File containing welcome message content (overrides welcome_message if specified)
+    pub welcome_file: Option<String>,
     /// Format for the welcome message (plain, html, markdown)
     pub welcome_format: HelpFormat,
     /// Timeout in seconds for deduplication of welcome messages
@@ -83,6 +85,7 @@ impl Default for JoinDetectionConfig {
             monitored_rooms: Vec::new(),
             send_welcome: false,
             welcome_message: "Welcome to the room! Type !help for assistance.".to_string(),
+            welcome_file: None,
             welcome_format: HelpFormat::Plain,
             welcome_timeout_seconds: 300,
         }
@@ -188,10 +191,14 @@ impl Config {
         }
         println!("    Send Welcome: {}", self.join_detection.send_welcome);
         if self.join_detection.send_welcome {
-            println!(
-                "    Welcome Message: {}",
-                self.join_detection.welcome_message
-            );
+            if let Some(ref welcome_file) = self.join_detection.welcome_file {
+                println!("    Welcome File: {}", welcome_file);
+            } else {
+                println!(
+                    "    Welcome Message: {}",
+                    self.join_detection.welcome_message
+                );
+            }
             println!("    Welcome Format: {}", self.join_detection.welcome_format);
             println!(
                 "    Welcome Timeout: {} seconds",
@@ -285,6 +292,12 @@ fn parse_join_detection_config(config: &Value) -> Result<JoinDetectionConfig> {
             .transpose()?
             .unwrap_or_default();
 
+        // Parse welcome_file
+        let welcome_file = join_config
+            .get("welcome_file")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         // Parse welcome_timeout_seconds
         let welcome_timeout_seconds = join_config
             .get("welcome_timeout_seconds")
@@ -297,6 +310,7 @@ fn parse_join_detection_config(config: &Value) -> Result<JoinDetectionConfig> {
             monitored_rooms,
             send_welcome,
             welcome_message,
+            welcome_file,
             welcome_format,
             welcome_timeout_seconds,
         })
@@ -310,6 +324,12 @@ fn parse_join_detection_config(config: &Value) -> Result<JoinDetectionConfig> {
 pub fn load_help_text(file_path: &str) -> Result<String> {
     fs::read_to_string(file_path)
         .with_context(|| format!("Failed to read help file '{}'", file_path))
+}
+
+/// Load welcome text from a file.
+pub fn load_welcome_text(file_path: &str) -> Result<String> {
+    fs::read_to_string(file_path)
+        .with_context(|| format!("Failed to read welcome file '{}'", file_path))
 }
 
 /// Check if a user ID should be ignored based on bot filtering configuration.

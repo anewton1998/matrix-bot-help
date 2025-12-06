@@ -23,3 +23,8 @@ bot.toml
 bot-help.md
 bot-help.txt
 bot-help.html
+
+# Welcome file
+bot-welcome.md
+bot-welcome.txt
+bot-welcome.html

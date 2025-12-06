@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use daemonize::Daemonize;
-use matrix_bot_help::{Config, HelpFormat, load_help_text, should_ignore_user};
+use matrix_bot_help::{Config, HelpFormat, load_help_text, load_welcome_text, should_ignore_user};
 use matrix_sdk::{
     Client, Room, RoomState, SessionMeta, SessionTokens,
     authentication::matrix::MatrixSession,
@@ -117,6 +117,13 @@ async fn run_bot(config: &Config) -> Result<()> {
     // Load help text at startup
     let help_text = load_help_text(&config.help_file).context("Failed to load help text")?;
 
+    // Load welcome text at startup if welcome_file is specified
+    let welcome_text = if let Some(ref welcome_file) = config.join_detection.welcome_file {
+        Some(load_welcome_text(welcome_file).context("Failed to load welcome text")?)
+    } else {
+        None
+    };
+
     // Get bot user ID for filtering
     let bot_user_id = client
         .user_id()
@@ -158,6 +165,7 @@ async fn run_bot(config: &Config) -> Result<()> {
             &join_detection_config,
             &bot_filtering,
             welcomed_users_clone.clone(),
+            &welcome_text,
         )
         .await
     });
@@ -273,6 +281,7 @@ async fn on_room_member(
     join_detection_config: &matrix_bot_help::JoinDetectionConfig,
     bot_filtering: &matrix_bot_help::BotFilteringConfig,
     welcomed_users: Arc<RwLock<std::collections::HashSet<(String, Instant)>>>,
+    welcome_text: &Option<String>,
 ) {
     // Check if join detection is enabled
     if !join_detection_config.enabled {
@@ -351,16 +360,21 @@ async fn on_room_member(
 
                 // Send welcome message if enabled
                 if join_detection_config.send_welcome {
+                    // Combine welcome_message with welcome_text from file if both exist
+                    let welcome_content = if let Some(file_text) = welcome_text {
+                        format!("{}\n{}", join_detection_config.welcome_message, file_text)
+                    } else {
+                        join_detection_config.welcome_message.clone()
+                    };
                     // Create a personalized welcome message mentioning the user
-                    let welcome_text =
-                        format!("{}: {}", user_id, join_detection_config.welcome_message);
+                    let welcome_message = format!("{}: {}", user_id, welcome_content);
                     let response = match join_detection_config.welcome_format {
-                        HelpFormat::Plain => RoomMessageEventContent::text_plain(&welcome_text),
+                        HelpFormat::Plain => RoomMessageEventContent::text_plain(&welcome_message),
                         HelpFormat::Html => {
-                            RoomMessageEventContent::text_html(&welcome_text, &welcome_text)
+                            RoomMessageEventContent::text_html(&welcome_message, &welcome_message)
                         }
                         HelpFormat::Markdown => {
-                            RoomMessageEventContent::text_markdown(&welcome_text)
+                            RoomMessageEventContent::text_markdown(&welcome_message)
                         }
                     };
 
