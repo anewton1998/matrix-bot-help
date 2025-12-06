@@ -45,6 +45,24 @@ fn main() -> Result<()> {
     println!("Config loaded:");
     config.print();
 
+    // Verify help file exists before daemonizing
+    if !std::path::Path::new(&config.help_file).exists() {
+        return Err(anyhow::anyhow!(
+            "Help file '{}' does not exist",
+            config.help_file
+        ));
+    }
+
+    // Verify welcome file exists if specified
+    if let Some(ref welcome_file) = config.join_detection.welcome_file
+        && !std::path::Path::new(welcome_file).exists()
+    {
+        return Err(anyhow::anyhow!(
+            "Welcome file '{}' does not exist",
+            welcome_file
+        ));
+    }
+
     // Daemonize if requested
     if cli.daemonize {
         let log_file_handle = OpenOptions::new()
