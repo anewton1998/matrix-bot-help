@@ -7,7 +7,7 @@ A Matrix bot that provides help messages to users in Matrix rooms. The bot respo
 - **Multiple Help Formats**: Supports Plain text, HTML, and Markdown help messages
 - **Bot Filtering**: Configurable filtering of bot messages and specific users
 - **Auto-join**: Automatically joins rooms when invited
-- **Welcome Messages**: Sends welcome messages when users join specific rooms
+- **Welcome Messages**: Sends welcome messages when users join specific rooms, with support for custom welcome files
 - **Daemon Mode**: Can run as a background daemon
 - **Docker Support**: Containerized deployment with multi-stage builds
 - **Configuration**: TOML-based configuration with sensible defaults
@@ -29,11 +29,12 @@ A Matrix bot that provides help messages to users in Matrix rooms. The bot respo
    # Edit bot.toml with your Matrix server details
    ```
 
-3. **Create help file:**
-   ```bash
-   cp bot-help.md.example bot-help.md
-   # Customize the help content as needed
-   ```
+3. **Create help and welcome files:**
+    ```bash
+    cp bot-help.md.example bot-help.md
+    cp bot-welcome.md.example bot-welcome.md
+    # Customize the help and welcome content as needed
+    ```
 
 4. **Run the bot:**
    ```bash
@@ -48,12 +49,13 @@ A Matrix bot that provides help messages to users in Matrix rooms. The bot respo
    ```
 
 2. **Prepare configuration:**
-   ```bash
-   mkdir -p config data
-   cp bot.toml.example config/bot.toml
-   cp bot-help.md.example config/bot-help.md
-   # Edit config/bot.toml with your settings
-   ```
+    ```bash
+    mkdir -p config data
+    cp bot.toml.example config/bot.toml
+    cp bot-help.md.example config/bot-help.md
+    cp bot-welcome.md.example config/bot-welcome.md
+    # Edit config/bot.toml with your settings
+    ```
 
 3. **Run the container:**
    ```bash
@@ -86,11 +88,15 @@ ignore_self = true
 ignore_bots = false
 ignored_users = ["@spam-bot:example.com"]
 
-# Welcome messages (optional)
-[welcome]
+# Join detection and welcome messages (optional)
+[join_detection]
 enabled = true
-welcome_file = "/app/config/bot-welcome.md"
-target_rooms = ["!roomid:example.com", "!anotherroom:example.com"]
+monitored_rooms = ["!roomid:example.com", "!anotherroom:example.com"]
+send_welcome = true
+welcome_message = "Welcome to the room! Type !help for assistance."
+welcome_file = "/app/config/bot-welcome.md"  # Optional: overrides/extends welcome_message
+welcome_format = "markdown"  # Options: plain, html, markdown
+welcome_timeout_seconds = 300
 ```
 
 ## Development
@@ -118,6 +124,7 @@ cargo clippy
 2. **Permission errors**: Check file permissions for config and log files
 3. **Network issues**: Ensure Matrix homeserver is correct (sometimes https://synapse.example.com instead of https://example.com)
 4. **Container issues**: Check Docker logs with `docker logs matrix-bot-help`
+5. **Missing files**: The bot will fail to start if `help_file` or `welcome_file` (if specified) don't exist
 
 ## License
 
