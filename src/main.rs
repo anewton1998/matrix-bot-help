@@ -145,6 +145,7 @@ async fn run_bot(config: &Config) -> Result<()> {
 
     // Add event handler for detecting when users join rooms
     let join_detection_config = config.join_detection.clone();
+    let bot_filtering = config.bot_filtering.clone();
     let welcomed_users = Arc::new(RwLock::new(
         std::collections::HashSet::<(String, Instant)>::new(),
     ));
@@ -155,6 +156,7 @@ async fn run_bot(config: &Config) -> Result<()> {
             event,
             room,
             &join_detection_config,
+            &bot_filtering,
             welcomed_users_clone.clone(),
         )
         .await
@@ -269,6 +271,7 @@ async fn on_room_member(
     event: SyncRoomMemberEvent,
     room: Room,
     join_detection_config: &matrix_bot_help::JoinDetectionConfig,
+    bot_filtering: &matrix_bot_help::BotFilteringConfig,
     welcomed_users: Arc<RwLock<std::collections::HashSet<(String, Instant)>>>,
 ) {
     // Check if join detection is enabled
@@ -298,6 +301,12 @@ async fn on_room_member(
 
     // Don't announce when the bot itself joins
     if user_id == bot_user_id {
+        return;
+    }
+
+    // Check if user should be ignored based on bot filtering configuration
+    if should_ignore_user(user_id.as_str(), bot_user_id.as_str(), bot_filtering) {
+        println!("Ignoring join event from filtered user: {}", user_id);
         return;
     }
 
